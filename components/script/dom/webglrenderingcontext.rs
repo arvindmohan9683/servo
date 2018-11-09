@@ -429,8 +429,7 @@ impl WebGLRenderingContext {
                 target,
                 0,
                 info.internal_format().unwrap_or(TexFormat::RGBA),
-                info.width(),
-                info.height(),
+                Size2D::new(info.width(), info.height()),
                 info.data_type().unwrap_or(TexDataType::UnsignedByte),
             );
         }
@@ -475,8 +474,7 @@ impl WebGLRenderingContext {
         target: TexImageTarget,
         level: u32,
         format: TexFormat,
-        width: u32,
-        height: u32,
+        size: Size2D<u32>,
         data_type: TexDataType,
     ) -> bool {
         if self
@@ -490,7 +488,7 @@ impl WebGLRenderingContext {
         // Handle validation failed: LINEAR filtering not valid for this texture
         // WebGL Conformance tests expect to fallback to [0, 0, 0, 255] RGBA UNSIGNED_BYTE
         let data_type = TexDataType::UnsignedByte;
-        let expected_byte_length = width * height * 4;
+        let expected_byte_length = size.area() * 4;
         let mut pixels = vec![0u8; expected_byte_length as usize];
         for rgba8 in pixels.chunks_mut(4) {
             rgba8[3] = 255u8;
@@ -502,8 +500,8 @@ impl WebGLRenderingContext {
             data_type,
             format,
             level,
-            width,
-            height,
+            size.width,
+            size.height,
             0,
             1,
             true,
@@ -528,13 +526,10 @@ impl WebGLRenderingContext {
         }
     }
 
-    fn get_image_pixels(
-        &self,
-        source: TexImageSource,
-    ) -> Fallible<Option<(Vec<u8>, Size2D<u32>, bool)>> {
+    fn get_image_pixels(&self, source: TexImageSource) -> Fallible<Option<TexPixels>> {
         Ok(Some(match source {
             TexImageSource::ImageData(image_data) => {
-                (image_data.to_vec(), image_data.get_size(), false)
+                TexPixels::new(image_data.to_vec(), image_data.get_size(), false)
             },
             TexImageSource::HTMLImageElement(image) => {
                 let document = document_from_node(&*self.canvas);
@@ -566,7 +561,7 @@ impl WebGLRenderingContext {
 
                 pixels::byte_swap_colors_inplace(&mut data);
 
-                (data, size, false)
+                TexPixels::new(data, size, false)
             },
             // TODO(emilio): Getting canvas data is implemented in CanvasRenderingContext2D,
             // but we need to refactor it moving it to `HTMLCanvasElement` and support
@@ -578,7 +573,7 @@ impl WebGLRenderingContext {
                 if let Some((mut data, size)) = canvas.fetch_all_data() {
                     // Pixels got from Canvas have already alpha premultiplied
                     pixels::byte_swap_colors_inplace(&mut data);
-                    (data, size, true)
+                    TexPixels::new(data, size, true)
                 } else {
                     return Ok(None);
                 }
@@ -3763,10 +3758,14 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             return Ok(self.webgl_error(InvalidOperation));
         }
 
+        let size = Size2D::new(width, height);
+
         if !self
-            .validate_filterable_texture(&texture, target, level, format, width, height, data_type)
+            .validate_filterable_texture(&texture, target, level, format, size, data_type)
         {
-            return Ok(()); // The validator sets the correct error for use
+            // FIXME(nox): What is the spec for this? No error is emitted ever
+            // by validate_filterable_texture.
+            return Ok(());
         }
 
         self.tex_image_2d(
@@ -3801,8 +3800,8 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             return Ok(self.webgl_error(InvalidEnum));
         }
 
-        let (pixels, size, premultiplied) = match self.get_image_pixels(source)? {
-            Some(triple) => triple,
+        let pixels = match self.get_image_pixels(source)? {
+            Some(pixels) => pixels,
             None => return Ok(()),
         };
 
@@ -3811,8 +3810,8 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             target,
             level,
             internal_format,
-            size.width as i32,
-            size.height as i32,
+            pixels.size.width as i32,
+            pixels.size.height as i32,
             0,
             format,
             data_type,
@@ -3821,21 +3820,22 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
         let TexImage2DValidatorResult {
             texture,
             target,
-            width,
-            height,
             level,
             border,
             format,
             data_type,
+            ..
         } = match validator.validate() {
             Ok(result) => result,
             Err(_) => return Ok(()), // NB: The validator sets the correct error for us.
         };
 
         if !self
-            .validate_filterable_texture(&texture, target, level, format, width, height, data_type)
+            .validate_filterable_texture(&texture, target, level, format, pixels.size, data_type)
         {
-            return Ok(()); // The validator sets the correct error for use
+            // FIXME(nox): What is the spec for this? No error is emitted ever
+            // by validate_filterable_texture.
+            return Ok(());
         }
 
         self.tex_image_2d(
@@ -3844,13 +3844,13 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             data_type,
             format,
             level,
-            width,
-            height,
+            pixels.size.width,
+            pixels.size.height,
             border,
             1,
-            premultiplied,
+            pixels.premultiplied,
             true,
-            pixels,
+            pixels.data,
         );
         Ok(())
     }
@@ -4002,8 +4002,8 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
         data_type: u32,
         source: TexImageSource,
     ) -> ErrorResult {
-        let (pixels, size, premultiplied) = match self.get_image_pixels(source)? {
-            Some(triple) => triple,
+        let pixels = match self.get_image_pixels(source)? {
+            Some(pixels) => pixels,
             None => return Ok(()),
         };
 
@@ -4012,8 +4012,8 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             target,
             level,
             format,
-            size.width as i32,
-            size.height as i32,
+            pixels.size.width as i32,
+            pixels.size.height as i32,
             0,
             format,
             data_type,
@@ -4021,8 +4021,6 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
         let TexImage2DValidatorResult {
             texture,
             target,
-            width,
-            height,
             level,
             format,
             data_type,
@@ -4038,14 +4036,14 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             level,
             xoffset,
             yoffset,
-            width,
-            height,
+            pixels.size.width,
+            pixels.size.height,
             format,
             data_type,
             1,
-            premultiplied,
+            pixels.premultiplied,
             true,
-            pixels,
+            pixels.data,
         );
         Ok(())
     }
@@ -4552,5 +4550,17 @@ fn rgba8_image_to_tex_image_data(
         // above cases, but we haven't turned the (format, type)
         // into an enum yet so there's a default case here.
         _ => unreachable!("Unsupported formats {:?} {:?}", format, data_type),
+    }
+}
+
+struct TexPixels {
+    data: Vec<u8>,
+    size: Size2D<u32>,
+    premultiplied: bool,
+}
+
+impl TexPixels {
+    fn new(data: Vec<u8>, size: Size2D<u32>, premultiplied: bool) -> Self {
+        Self { data, size, premultiplied }
     }
 }
