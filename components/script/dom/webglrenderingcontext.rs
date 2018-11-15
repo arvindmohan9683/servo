@@ -494,19 +494,19 @@ impl WebGLRenderingContext {
             rgba8[3] = 255u8;
         }
 
+        // TODO(nox): AFAICT here we construct a RGBA8 array and then we
+        // convert it to whatever actual format we need, we should probably
+        // construct the desired format from the start.
         self.tex_image_2d(
             texture,
             target,
             data_type,
             format,
             level,
-            size.width,
-            size.height,
             0,
             1,
-            true,
             TexSource::FromHtmlElement,
-            pixels,
+            TexPixels::new(pixels, size, true),
         );
 
         false
@@ -642,8 +642,7 @@ impl WebGLRenderingContext {
         &self,
         internal_format: TexFormat,
         data_type: TexDataType,
-        width: u32,
-        height: u32,
+        size: Size2D<u32>,
         unpacking_alignment: u32,
         alpha_treatment: Option<AlphaTreatment>,
         y_axis_treatment: YAxisTreatment,
@@ -674,8 +673,8 @@ impl WebGLRenderingContext {
             pixels = webgl::flip_pixels_y(
                 internal_format,
                 data_type,
-                width as usize,
-                height as usize,
+                size.width as usize,
+                size.height as usize,
                 unpacking_alignment as usize,
                 pixels,
             );
@@ -691,17 +690,14 @@ impl WebGLRenderingContext {
         data_type: TexDataType,
         internal_format: TexFormat,
         level: u32,
-        width: u32,
-        height: u32,
         _border: u32,
         unpacking_alignment: u32,
-        source_premultiplied: bool,
         tex_source: TexSource,
-        pixels: Vec<u8>,
+        pixels: TexPixels,
     ) {
         let settings = self.texture_unpacking_settings.get();
 
-        let alpha_treatment = match (source_premultiplied, settings.contains(TextureUnpacking::PREMULTIPLY_ALPHA)) {
+        let alpha_treatment = match (pixels.premultiplied, settings.contains(TextureUnpacking::PREMULTIPLY_ALPHA)) {
             (true, false) => Some(AlphaTreatment::Unmultiply),
             (false, true) => Some(AlphaTreatment::Premultiply),
             _ => None,
@@ -713,16 +709,15 @@ impl WebGLRenderingContext {
             YAxisTreatment::AsIs
         };
 
-        let pixels = self.prepare_pixels(
+        let buff = self.prepare_pixels(
             internal_format,
             data_type,
-            width,
-            height,
+            pixels.size,
             unpacking_alignment,
             alpha_treatment,
             y_axis_treatment,
             tex_source,
-            pixels,
+            pixels.data,
         );
 
         // TexImage2D depth is always equal to 1
@@ -730,8 +725,8 @@ impl WebGLRenderingContext {
             self,
             texture.initialize(
                 target,
-                width,
-                height,
+                pixels.size.width,
+                pixels.size.height,
                 1,
                 internal_format,
                 level,
@@ -751,14 +746,14 @@ impl WebGLRenderingContext {
             target: target.as_gl_constant(),
             level,
             internal_format,
-            width,
-            height,
+            width: pixels.size.width,
+            height: pixels.size.height,
             format,
             data_type: self.extension_manager.effective_type(data_type),
             unpacking_alignment,
             receiver,
         });
-        sender.send(&pixels).unwrap();
+        sender.send(&buff).unwrap();
 
         if let Some(fb) = self.bound_framebuffer.get() {
             fb.invalidate_texture(&*texture);
@@ -772,18 +767,15 @@ impl WebGLRenderingContext {
         level: u32,
         xoffset: i32,
         yoffset: i32,
-        width: u32,
-        height: u32,
         format: TexFormat,
         data_type: TexDataType,
         unpacking_alignment: u32,
-        source_premultiplied: bool,
         tex_source: TexSource,
-        pixels: Vec<u8>,
+        pixels: TexPixels,
     ) {
         let settings = self.texture_unpacking_settings.get();
 
-        let alpha_treatment = match (source_premultiplied, settings.contains(TextureUnpacking::PREMULTIPLY_ALPHA)) {
+        let alpha_treatment = match (pixels.premultiplied, settings.contains(TextureUnpacking::PREMULTIPLY_ALPHA)) {
             (true, false) => Some(AlphaTreatment::Unmultiply),
             (false, true) => Some(AlphaTreatment::Premultiply),
             _ => None,
@@ -795,16 +787,15 @@ impl WebGLRenderingContext {
             YAxisTreatment::AsIs
         };
 
-        let pixels = self.prepare_pixels(
+        let buff = self.prepare_pixels(
             format,
             data_type,
-            width,
-            height,
+            pixels.size,
             unpacking_alignment,
             alpha_treatment,
             y_axis_treatment,
             tex_source,
-            pixels,
+            pixels.data,
         );
 
         // We have already validated level
@@ -815,9 +806,9 @@ impl WebGLRenderingContext {
         //   - x offset plus the width is greater than the texture width
         //   - y offset plus the height is greater than the texture height
         if xoffset < 0 ||
-            (xoffset as u32 + width) > image_info.width() ||
+            (xoffset as u32 + pixels.size.width) > image_info.width() ||
             yoffset < 0 ||
-            (yoffset as u32 + height) > image_info.height()
+            (yoffset as u32 + pixels.size.height) > image_info.height()
         {
             return self.webgl_error(InvalidValue);
         }
@@ -836,14 +827,14 @@ impl WebGLRenderingContext {
             level,
             xoffset,
             yoffset,
-            width,
-            height,
+            width: pixels.size.width,
+            height: pixels.size.height,
             format: format.as_gl_constant(),
             data_type: self.extension_manager.effective_type(data_type.as_gl_constant()),
             unpacking_alignment,
             receiver,
         });
-        sender.send(&pixels).unwrap();
+        sender.send(&buff).unwrap();
     }
 
     fn get_gl_extensions(&self) -> String {
@@ -3705,13 +3696,10 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             data_type,
             format,
             level,
-            width,
-            height,
             border,
             unpacking_alignment,
-            false,
             TexSource::FromArray,
-            buff,
+            TexPixels::from_array(buff, Size2D::new(width, height)),
         );
 
         Ok(())
@@ -3775,13 +3763,10 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             data_type,
             format,
             level,
-            pixels.size.width,
-            pixels.size.height,
             border,
             1,
-            pixels.premultiplied,
             TexSource::FromHtmlElement,
-            pixels.data,
+            pixels,
         );
         Ok(())
     }
@@ -3910,14 +3895,11 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             level,
             xoffset,
             yoffset,
-            width,
-            height,
             format,
             data_type,
             unpacking_alignment,
-            false,
             TexSource::FromArray,
-            buff,
+            TexPixels::from_array(buff, Size2D::new(width, height)),
         );
         Ok(())
     }
@@ -3967,14 +3949,11 @@ impl WebGLRenderingContextMethods for WebGLRenderingContext {
             level,
             xoffset,
             yoffset,
-            pixels.size.width,
-            pixels.size.height,
             format,
             data_type,
             1,
-            pixels.premultiplied,
             TexSource::FromHtmlElement,
-            pixels.data,
+            pixels,
         );
         Ok(())
     }
@@ -4265,5 +4244,9 @@ struct TexPixels {
 impl TexPixels {
     fn new(data: Vec<u8>, size: Size2D<u32>, premultiplied: bool) -> Self {
         Self { data, size, premultiplied }
+    }
+
+    fn from_array(data: Vec<u8>, size: Size2D<u32>) -> Self {
+        Self { data, size, premultiplied: false }
     }
 }
