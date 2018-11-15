@@ -720,16 +720,6 @@ impl WebGLRenderingContext {
             )
         );
 
-        // Set the unpack alignment.  For textures coming from arrays,
-        // this will be the current value of the context's
-        // GL_UNPACK_ALIGNMENT, while for textures from images or
-        // canvas (produced by rgba8_image_to_tex_image_data()), it
-        // will be 1.
-        self.send_command(WebGLCommand::PixelStorei(
-            constants::UNPACK_ALIGNMENT,
-            unpacking_alignment as i32,
-        ));
-
         let format = internal_format.as_gl_constant();
         let data_type = data_type.as_gl_constant();
         let internal_format = self
@@ -746,6 +736,7 @@ impl WebGLRenderingContext {
             height,
             format,
             data_type: self.extension_manager.effective_type(data_type),
+            unpacking_alignment,
             receiver,
         });
         sender.send(&pixels).unwrap();
@@ -804,16 +795,6 @@ impl WebGLRenderingContext {
             return self.webgl_error(InvalidOperation);
         }
 
-        // Set the unpack alignment.  For textures coming from arrays,
-        // this will be the current value of the context's
-        // GL_UNPACK_ALIGNMENT, while for textures from images or
-        // canvas (produced by rgba8_image_to_tex_image_data()), it
-        // will be 1.
-        self.send_command(WebGLCommand::PixelStorei(
-            constants::UNPACK_ALIGNMENT,
-            unpacking_alignment as i32,
-        ));
-
         // TODO(emilio): convert colorspace if requested
         let (sender, receiver) = ipc::bytes_channel().unwrap();
         self.send_command(WebGLCommand::TexSubImage2D {
@@ -825,6 +806,7 @@ impl WebGLRenderingContext {
             height,
             format: format.as_gl_constant(),
             data_type: self.extension_manager.effective_type(data_type.as_gl_constant()),
+            unpacking_alignment,
             receiver,
         });
         sender.send(&pixels).unwrap();
