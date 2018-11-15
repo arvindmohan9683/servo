@@ -13,10 +13,12 @@ def main(task_for, mock=False):
         if CONFIG.git_ref in ["refs/heads/auto", "refs/heads/try", "refs/heads/try-taskcluster"]:
             branch = CONFIG.git_ref.split("/")[-1]
             assert CONFIG.git_sha
+            route = ".v2.servo/servo-%s.%s" % (branch, CONFIG.git_sha)
             CONFIG.routes_for_all_subtasks.extend([
                 "tc-treeherder" + route,
                 "tc-treeherder-staging" + route,
             ])
+
 
             # linux_tidy_unit()
             # android_arm32()
