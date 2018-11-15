@@ -558,7 +558,7 @@ impl WebGLRenderingContext {
                     _ => unimplemented!(),
                 };
 
-                pixels::byte_swap_colors_inplace(&mut data);
+                pixels::rgba8_byte_swap_colors_inplace(&mut data);
 
                 TexPixels::new(data, size, false)
             },
@@ -571,7 +571,7 @@ impl WebGLRenderingContext {
                 }
                 if let Some((mut data, size)) = canvas.fetch_all_data() {
                     // Pixels got from Canvas have already alpha premultiplied
-                    pixels::byte_swap_colors_inplace(&mut data);
+                    pixels::rgba8_byte_swap_colors_inplace(&mut data);
                     TexPixels::new(data, size, true)
                 } else {
                     return Ok(None);
