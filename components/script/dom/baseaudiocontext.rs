@@ -338,6 +338,10 @@ impl BaseAudioContextMethods for BaseAudioContext {
         GainNode::new(&self.global().as_window(), &self, &GainOptions::empty())
     }
 
+    fn CreateConstantSource(&self) -> Fallible<DomRoot<GainNode>> {
+        ConstantSourceNode::new(&self.global().as_window(), &self, &GainOptions::empty())
+    }
+
     /// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createpanner
     fn CreatePanner(&self) -> Fallible<DomRoot<PannerNode>> {
         PannerNode::new(&self.global().as_window(), &self, &PannerOptions::empty())
