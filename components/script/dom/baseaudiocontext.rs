@@ -36,6 +36,7 @@ use crate::dom::channelmergernode::ChannelMergerNode;
 use crate::dom::domexception::{DOMErrorName, DOMException};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::gainnode::GainNode;
+use crate::dom::constantsource::ConstantSourceNode;
 use crate::dom::oscillatornode::OscillatorNode;
 use crate::dom::pannernode::PannerNode;
 use crate::dom::promise::Promise;
@@ -338,8 +339,9 @@ impl BaseAudioContextMethods for BaseAudioContext {
         GainNode::new(&self.global().as_window(), &self, &GainOptions::empty())
     }
 
-    fn CreateConstantSource(&self) -> Fallible<DomRoot<GainNode>> {
-        ConstantSourceNode::new(&self.global().as_window(), &self, &GainOptions::empty())
+    /// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createconstantsource
+    fn CreateConstantSource(&self) -> Fallible<DomRoot<ConstantSourceNode>> {
+        ConstantSourceNode::new(&self.global().as_window(), &self, &ConstantSourceNodeOptions::empty())
     }
 
     /// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createpanner
